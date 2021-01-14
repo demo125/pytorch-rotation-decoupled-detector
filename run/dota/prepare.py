@@ -50,7 +50,7 @@ def main(image_set, single_scale=False):
     # (2)
     pairs = []
     for filename in os.listdir(os.path.join(dir_dataset, 'images', image_set)):
-        anno = os.path.join(dir_dataset, 'annotations', image_set, filename.replace('png', 'json'))
+        anno = os.path.join(dir_dataset, 'annotations', image_set, filename.replace('jpg', 'json'))
         img = os.path.join(dir_dataset, 'images', image_set, filename)
         if not os.path.exists(anno):
             anno = None
@@ -61,17 +61,18 @@ def main(image_set, single_scale=False):
     save_empty = image_set == 'test'
     image_set = f'{image_set}-{sizes[0]}' if single_scale else image_set
 
-    out_dir_images = os.path.join(dir_dataset, 'images', f'{image_set}-crop')
-    out_dir_annos = os.path.join(dir_dataset, 'annotations', f'{image_set}-crop')
+    out_dir_images = os.path.join(dir_dataset, 'images', f'{image_set}')
+    out_dir_annos = os.path.join(dir_dataset, 'annotations', f'{image_set}')
 
-    cropper = Cropper(sizes, overlap)
-    cropper.crop_batch(pairs, out_dir_images, out_dir_annos, save_empty)
+    #cropper = Cropper(sizes, overlap)
+    #cropper.crop_batch(pairs, out_dir_images, out_dir_annos, save_empty)
 
     # (3)
     pairs = []
+    print(123)
     for filename in os.listdir(out_dir_images):
-        img = os.path.join('images', f'{image_set}-crop', filename)
-        anno = None if image_set == 'test' else os.path.join('annotations', f'{image_set}-crop', filename.replace('jpg', 'json'))
+        img = os.path.join('images', f'{image_set}', filename)
+        anno = None if image_set == 'test' else os.path.join('annotations', f'{image_set}', filename.replace('jpg', 'json'))
         pairs.append([img, anno])
     out_dir = os.path.join(dir_dataset, 'image-sets')
     os.makedirs(out_dir, exist_ok=True)
@@ -95,9 +96,9 @@ if __name__ == '__main__':
     # (2) crop images
     # (3) generate image-set files
 
-    dir_dataset = '<replace with your local path>'
+    dir_dataset = '/home/mde/python/pytorch-rotation-decoupled-detector/'
 
     main('train')
     main('val')
     main('test')
-    main('test', True)
+    #main('test', True)

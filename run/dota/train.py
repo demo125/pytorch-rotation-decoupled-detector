@@ -9,7 +9,10 @@
 # Distributed under MIT License.
 
 import sys
-
+#import pyximport
+#pyximport.install()
+import numpy as np
+from PIL import Image
 sys.path.append('.')
 
 import os
@@ -41,9 +44,9 @@ def main():
     current_step = max(indexes) if indexes else 0
 
     image_size = 768
-    lr = 1e-3
-    batch_size = 12
-    num_workers = 4
+    lr = 1e-4
+    batch_size = 18
+    num_workers = 30
 
     max_step = 250000
     lr_cfg = [[100000, lr], [200000, lr / 10], [max_step, lr / 50]]
@@ -82,6 +85,7 @@ def main():
     model = RDD(backbone(fetch_feature=True), cfg)
     model.build_pipe(shape=[2, 3, image_size, image_size])
     if current_step:
+        print('restored')
         model.restore(os.path.join(dir_weight, '%d.pth' % current_step))
     else:
         model.init()
@@ -91,8 +95,10 @@ def main():
     model.cuda()
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
     training = True
+    loss_clss, loss_locs = [], []
     while training and current_step < max_step:
-        tqdm_loader = tqdm.tqdm(loader)
+        tqdm_loader = tqdm.tqdm(loader, ncols=100)
+
         for images, targets, infos in tqdm_loader:
             current_step += 1
             adjust_lr_multi_step(optimizer, current_step, lr_cfg, warm_up)
@@ -107,7 +113,17 @@ def main():
             for key, val in list(losses.items()):
                 losses[key] = val.item()
                 writer.add_scalar(key, val, global_step=current_step)
+            loss_clss.append(losses['loss_cls'])
+            loss_locs.append(losses['loss_loc'])
+            # print(current_step, current_step % 10 == 0, len(loss_clss) != 0)
+            if current_step % 50 == 0 and len(loss_clss) != 0:
+                print('\nmean loss_cls', np.mean(loss_clss))
+                print('mean loss_loc', np.mean(loss_locs))
+                print()
+                loss_clss, loss_locs = [], []
+
             writer.flush()
+
             tqdm_loader.set_postfix(losses)
             tqdm_loader.set_description(f'<{current_step}/{max_step}>')
 
@@ -134,7 +150,7 @@ if __name__ == '__main__':
     torch.cuda.set_device(device_ids[0])
     backbone = resnet.resnet101
 
-    dir_dataset = '<replace with your local path>'
-    dir_save = '<replace with your local path>'
+    dir_dataset = '/home/mde/python/pytorch-rotation-decoupled-detector/'
+    dir_save = '/home/mde/python/pytorch-rotation-decoupled-detector/save/'
 
     main()

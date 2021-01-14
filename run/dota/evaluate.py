@@ -12,6 +12,7 @@ import sys
 
 sys.path.append('.')
 
+import ntpath
 import os
 import tqdm
 import torch
@@ -21,8 +22,8 @@ from collections import defaultdict
 from torch.utils.data import DataLoader
 
 from data.aug import ops
-from data.aug.compose import Compose
 from data.dataset import DOTA
+from data.aug.compose import Compose
 
 from model.rdd import RDD
 from model.backbone import resnet
@@ -38,7 +39,12 @@ def main():
     if checkpoint is None:
         dir_weight = os.path.join(dir_save, 'weight')
         indexes = [int(os.path.splitext(path)[0]) for path in os.listdir(dir_weight)]
-        current_step = max(indexes)
+        current_step = 93000
+        #98000 5366/7245
+        #58000 5619/7245
+        #33000 5936
+        #26000 6034
+        #11000 6302
         checkpoint = os.path.join(dir_weight, '%d.pth' % current_step)
 
     batch_size = 32
@@ -46,7 +52,8 @@ def main():
 
     image_size = 768
     aug = Compose([ops.PadSquare(), ops.Resize(image_size)])
-    dataset = DOTA(dir_dataset, image_set, aug)
+    dataset = DOTA(dir_dataset, 'test', aug)
+    print('predicting \# files', len(dataset))
     loader = DataLoader(dataset, batch_size, num_workers=num_workers, pin_memory=True, collate_fn=dataset.collate)
     num_classes = len(dataset.names)
 
@@ -55,16 +62,16 @@ def main():
         'sizes': [3] * 5,
         'aspects': [[1, 2, 4, 8]] * 5,
         'scales': [[2 ** 0, 2 ** (1 / 3), 2 ** (2 / 3)]] * 5,
-        'old_version': old_version
+        'old_version': False
     }
     conf_thresh = 0.01
-    nms_thresh = 0.45
+    nms_thresh = 0.5
     cfg = {
         'prior_box': prior_box,
         'num_classes': num_classes,
         'extra': 2,
         'conf_thresh': conf_thresh,
-        'nms_thresh': nms_thresh,
+        'nms_thresh': nms_thresh
     }
 
     model = RDD(backbone(fetch_feature=True), cfg)
@@ -74,18 +81,20 @@ def main():
         model = CustomDetDataParallel(model, device_ids)
     model.cuda()
     model.eval()
-
+    count_t, count_n = 0, 0
     ret_raw = defaultdict(list)
     for images, targets, infos in tqdm.tqdm(loader):
         images = images.cuda() / 255
         dets = model(images)
         for (det, info) in zip(dets, infos):
             if det:
+                count_t += 1
                 bboxes, scores, labels = det
                 bboxes = bboxes.cpu().numpy()
                 scores = scores.cpu().numpy()
                 labels = labels.cpu().numpy()
-                fname, x, y, w, h = os.path.splitext(os.path.basename(info['img_path']))[0].split('-')[:5]
+                x, y, w, h = 0, 0, info['shape'][1], info['shape'][0]
+                fname = ntpath.basename(info['img_path'])
                 x, y, w, h = int(x), int(y), int(w), int(h)
                 long_edge = max(w, h)
                 pad_x, pad_y = (long_edge - w) // 2, (long_edge - h) // 2
@@ -95,7 +104,9 @@ def main():
                 bboxes += [x, y]
                 bboxes = np.stack([xy42xywha(bbox) for bbox in bboxes])
                 ret_raw[fname].append([bboxes, scores, labels])
-
+            else:
+                count_n += 1
+    print(f'{count_t} files with found object, {count_n} with no object found')
     print('merging results...')
     ret = []
 
@@ -126,15 +137,12 @@ def main():
 
 if __name__ == '__main__':
 
-    device_ids = [0]
+    device_ids = [0, 1]
     torch.cuda.set_device(device_ids[0])
-
-    dir_dataset = '<replace with your local path>'
-    dir_save = '<replace with your local path>'
-
     backbone = resnet.resnet101
+
+    dir_dataset = '.'
+    dir_save = './save'
     checkpoint = None
-    old_version = False  # set True when using the original weights
-    image_set = 'test'  # test-768
 
     main()

@@ -1,10 +1,8 @@
 
 
-DIR_WEIGHT = '<replace with your local path>'
+DIR_WEIGHT = '/home/mde/python/pytorch-rotation-decoupled-detector/pre-trained-weights/'
 
-CATEGORY_DOTA_V10 = ['baseball-diamond', 'basketball-court', 'bridge', 'ground-track-field', 'harbor', 'helicopter',
-                     'large-vehicle', 'plane', 'roundabout', 'ship', 'small-vehicle', 'soccer-ball-field',
-                     'storage-tank', 'swimming-pool', 'tennis-court']
+CATEGORY_DOTA_V10 = ['bar']
 
 CATEGORY_UCAS_AOD = ['car', 'plane']
 

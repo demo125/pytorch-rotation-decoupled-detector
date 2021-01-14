@@ -50,6 +50,7 @@ class Cropper:
         ih, iw = img.shape[:2]
         name = os.path.splitext(os.path.basename(path_img))[0]
         anno = [] if path_anno is None else json.load(open(path_anno))
+        
         for i, size in enumerate(self.sizes):
             if i > 0 and (max if save_empty else min)(iw, ih) < self.sizes[i - 1]:
                 break
@@ -70,6 +71,7 @@ class Cropper:
                     if sub_anno or save_empty:
                         save_path = os.path.join(out_dir_images, save_name + '.jpg')
                         sub_img = img[y: y + h, x: x + w]
+                        print(save_path)
                         imwrite(sub_img, save_path)
 
     def crop_batch(self, pairs, out_dir_images, out_dir_annos, save_empty=False):
