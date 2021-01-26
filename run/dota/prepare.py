@@ -16,7 +16,7 @@ import os
 import json
 import cv2 as cv
 import numpy as np
-
+import math
 from utils.crop_image import Cropper
 
 
@@ -31,8 +31,9 @@ def txt2json(dir_txt, dir_json):
                 obj = dict()
                 coord = np.array(line_split[:8], dtype=np.float32).reshape([4, 2])
                 bbox = cv.boxPoints(cv.minAreaRect(coord)).astype(np.int).tolist()
-                obj['name'] = line_split[8].lower()
+                obj['name'] = int(float(line_split[9])) #line_split[8].lower()
                 obj['bbox'] = bbox
+                obj['angle'] = float(line_split[8])
                 objs.append(obj)
             else:
                 print('<skip line> %s' % line)

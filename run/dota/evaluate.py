@@ -39,7 +39,7 @@ def main():
     if checkpoint is None:
         dir_weight = os.path.join(dir_save, 'weight')
         indexes = [int(os.path.splitext(path)[0]) for path in os.listdir(dir_weight)]
-        current_step = 93000
+        current_step = 106100
         #98000 5366/7245
         #58000 5619/7245
         #33000 5936

@@ -68,7 +68,17 @@ class RDD(xnn.Module):
 
     def restore(self, path):
         weight = torch.load(path)
-        self.load_state_dict(weight, strict=True)
+
+        pretrained_dict = weight
+        model_dict = self.state_dict()
+        # 1. filter out unnecessary keys
+        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict }
+        # 2. overwrite entries in the existing state dict n
+        model_dict.update(pretrained_dict)
+        # 3. load the new state dict
+        self.load_state_dict(model_dict)
+
+        # self.load_state_dict(weight, strict=True)
 
     def forward(self, images, targets=None):
         features = list(self.backbone(images))

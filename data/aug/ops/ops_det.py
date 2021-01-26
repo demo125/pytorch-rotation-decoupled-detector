@@ -260,6 +260,9 @@ class RandomRotate90:
             if k == 3:
                 anno['bboxes'][:, :, 0] = iw - 1 - anno['bboxes'][:, :, 0]
                 anno['bboxes'] = anno['bboxes'][:, :, [1, 0]]
+            a = anno['labels'] * 5
+            n = (a - k * 90) % 360
+            anno['labels'] = n // 5
         img = rotate90(img, k)
         return img, anno
 
