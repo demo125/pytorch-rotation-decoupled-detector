@@ -44,7 +44,7 @@ class ConvertColor:
 
 class RandomGray:  # RGB
     def __call__(self, img, anno=None):
-        if np.random.randint(2):
+        if np.random.rand() > 0.9:
             img = rgb2gray(img)
         return img, anno
 
@@ -76,7 +76,7 @@ class RandomContrast:  # RGB
 
 class RandomLightingNoise:  # RGB
     def __call__(self, img, anno=None):
-        if np.random.randint(2):
+        if np.random.rand() > 0.7:
             indexes = [0, 1, 2]
             np.random.shuffle(indexes)
             img = img[..., indexes]
