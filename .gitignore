@@ -12,3 +12,4 @@ utils/box/ext/rbbox_overlap_gpu/build
 *.so
 __pycache__
 config
+.ipynb_checkpoints
