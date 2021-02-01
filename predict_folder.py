@@ -49,9 +49,10 @@ def create_dataset_loader(input_folder):
     def create_dataset_from_folder(dir_dataset):
         pairs = []
         for filename in os.listdir(dir_dataset):
-            img = os.path.join(dir_dataset, filename)
-            anno = None
-            pairs.append([img, anno])
+            if filename.endswith(('.jpg', '.png')):
+                img = os.path.join(dir_dataset, filename)
+                anno = None
+                pairs.append([img, anno])
 
         dataset_path = os.path.join(FLAGS.output_folder, 'image-sets', 'dataset.json')
         os.makedirs(Path(dataset_path).parent, exist_ok=True)
