@@ -73,10 +73,8 @@ def create_dataset_loader(input_folder):
 
 def load_model(num_classes):
     print('loading model...')
-    #TODO
-    indexes = [int(os.path.splitext(path)[0]) for path in os.listdir('../save/weight/')]
-    current_step = max(indexes) if indexes else 0
-    dir_weight = os.path.join(f'../save/weight/{current_step}.pth') #later replace for FLAGS.weigths
+
+    dir_weight = os.path.join(FLAGS.weights) #later replace for FLAGS.weigths
 
     prior_box = {
         'strides': [8, 16, 32, 64, 128],
@@ -111,31 +109,32 @@ def predict(model, data_loader, output_csv):
     count_predicted, count_not_predicted = 0, 0
     ret_raw = defaultdict(list)
 
-    for images, targets, infos in tqdm.tqdm(data_loader):
-        images = images.cuda() / 255
-        dets = model(images)
-        for (det, info) in zip(dets, infos):
-            fname = ntpath.basename(info['img_path'])
-            if det:
-                bboxes, scores, labels = det
-                bboxes = bboxes.cpu().numpy()
-                scores = scores.cpu().numpy()
-                labels = labels.cpu().numpy()
-                x, y, w, h = 0, 0, info['shape'][1], info['shape'][0]
-                x, y, w, h = int(x), int(y), int(w), int(h)
-                long_edge = max(w, h)
-                pad_x, pad_y = (long_edge - w) // 2, (long_edge - h) // 2
-                bboxes = np.stack([xywha2xy4(bbox) for bbox in bboxes])
-                bboxes *= long_edge / FLAGS.image_size
-                bboxes -= [pad_x, pad_y]
-                bboxes += [x, y]
-                bboxes = np.stack([xy42xywha(bbox, flag=1) for bbox in bboxes])
+    with torch.no_grad():
+        for images, targets, infos in tqdm.tqdm(data_loader):
+            images = images.cuda() / 255
+            dets = model(images)
+            for (det, info) in zip(dets, infos):
+                fname = ntpath.basename(info['img_path'])
+                if det:
+                    bboxes, scores, labels = det
+                    bboxes = bboxes.cpu().numpy()
+                    scores = scores.cpu().numpy()
+                    labels = labels.cpu().numpy()
+                    x, y, w, h = 0, 0, info['shape'][1], info['shape'][0]
+                    x, y, w, h = int(x), int(y), int(w), int(h)
+                    long_edge = max(w, h)
+                    pad_x, pad_y = (long_edge - w) // 2, (long_edge - h) // 2
+                    bboxes = np.stack([xywha2xy4(bbox) for bbox in bboxes])
+                    bboxes *= long_edge / FLAGS.image_size
+                    bboxes -= [pad_x, pad_y]
+                    bboxes += [x, y]
+                    bboxes = np.stack([xy42xywha(bbox, flag=1) for bbox in bboxes])
 
-                ret_raw[fname].append([bboxes, scores, labels])
-                count_predicted += 1
-            else:
-                count_not_predicted += 1
-                ret_raw[fname].append([np.zeros((1, 5)), np.zeros((1,)), np.zeros((1,))])
+                    ret_raw[fname].append([bboxes, scores, labels])
+                    count_predicted += 1
+                else:
+                    count_not_predicted += 1
+                    ret_raw[fname].append([np.zeros((1, 5)), np.zeros((1,)), np.zeros((1,))])
 
     print(f'{count_predicted} jpgs with at least one object found, {count_not_predicted} with no object found')
 
@@ -212,7 +211,8 @@ def filter_overlaping_bbs(input_csv, output_csv):
             keepidx = idxs[np.argmax(scores)]
             df.loc[keepidx, 'keep'] = True
             group.loc[keepidx, 'keep'] = True
-    df = df[df.keep is True]
+
+    df = df[df.keep==True]
 
     df.to_csv(output_csv,  sep=';')
 
@@ -263,8 +263,9 @@ def export_cropped_bb(img_bbs):
 
         cropped_bar = rotated_img.crop((x_min, y_min, x_max, y_max))
         p = os.path.join(FLAGS.output_folder, 'cropped_bbs')
-        cropped_bar.save(os.path.join(p, f'{img_name}__{i}.jpg'))
-
+        img_name_without_extension = '.'.join(img_name.split('.')[:-1])
+        img_extension = img_name.split('.')[-1]
+        cropped_bar.save(os.path.join(p, f'{img_name_without_extension}__{i}.'+img_extension))
 
 
 def crop_images(prediction_output_csv):
@@ -283,35 +284,32 @@ def crop_images(prediction_output_csv):
     for img_name in image_predictions:
         converted_dict_to_list.append(image_predictions[img_name])
 
-    converted_dict_to_list = converted_dict_to_list[:100]
     if FLAGS.visualized_predicted_bbs_folder is not None:
         os.makedirs(FLAGS.visualized_predicted_bbs_folder, exist_ok=True)
-        print('saving imgs with predicted bbs to', FLAGS.visualized_predicted_bbs_folder)
+        print('saving imgs with drawn bbs to', FLAGS.visualized_predicted_bbs_folder)
         with Pool(processes=FLAGS.num_workers) as pool:
             pool.map(visualize_bbs, converted_dict_to_list)
 
     p = os.path.join(FLAGS.output_folder, 'cropped_bbs')
     print('Exporting cropped bbs to', p)
     os.makedirs(p, exist_ok=True)
-    # with Pool(processes=FLAGS.num_workers) as pool:
-    #TODO
-    with Pool(processes=3) as pool:
+    with Pool(processes=FLAGS.num_workers) as pool:
         pool.map(export_cropped_bb, converted_dict_to_list)
     print('all done.')
 
 def main(argv):
 
 
-    # data_loader, num_classes = create_dataset_loader(FLAGS.input_folder)
-    # model = load_model(num_classes = num_classes) #same as 360 // 5(angle_step)
-    #
+    data_loader, num_classes = create_dataset_loader(FLAGS.input_folder)
+    model = load_model(num_classes = num_classes) #same as 360 // 5(angle_step)
+
     predictions_all_bbs = os.path.join(FLAGS.output_folder, 'predictions_all_bbs.csv')
 
-    # predict(model, data_loader, predictions_all_bbs)
-    #
+    predict(model, data_loader, predictions_all_bbs)
+
     predictions_final_bbs = os.path.join(FLAGS.output_folder, 'predictions_final_bbs.csv')
 
-    # filter_overlaping_bbs(predictions_all_bbs, predictions_final_bbs)
+    filter_overlaping_bbs(predictions_all_bbs, predictions_final_bbs)
 
     crop_images(predictions_final_bbs)
 

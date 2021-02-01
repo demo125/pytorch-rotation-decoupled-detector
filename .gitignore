@@ -6,7 +6,6 @@ pre-trained-weights
 predictions
 save
 .gitignore.swp
-data
 utils/box/ext/rbbox_overlap_cpu/build
 utils/box/ext/rbbox_overlap_gpu/build
 *.so

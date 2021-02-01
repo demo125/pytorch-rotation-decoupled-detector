@@ -35,7 +35,7 @@ class DetDataset(Dataset):
         dataset = []
         for image_set in image_sets:
             for img, anno in json.load(open(os.path.join(root, 'image-sets', f'{image_set}.json'))):
-                img = os.path.join(root, convert_path(img))
+                img = os.path.join(convert_path(img))
                 anno = (os.path.join(root, convert_path(anno)) if anno else None)
                 dataset.append([img, anno])
         return dataset
