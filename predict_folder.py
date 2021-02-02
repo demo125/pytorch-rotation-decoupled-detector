@@ -285,7 +285,7 @@ def crop_images(prediction_output_csv):
     for img_name in image_predictions:
         converted_dict_to_list.append(image_predictions[img_name])
 
-    if FLAGS.visualized_predicted_bbs_folder is not None:
+    if FLAGS.visualized_predicted_bbs_folder:
         os.makedirs(FLAGS.visualized_predicted_bbs_folder, exist_ok=True)
         print('saving imgs with drawn bbs to', FLAGS.visualized_predicted_bbs_folder)
         with Pool(processes=FLAGS.num_workers) as pool:
