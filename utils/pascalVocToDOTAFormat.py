@@ -73,8 +73,12 @@ for d in ['train', 'val', 'test']:
         if not os.path.isdir(p):
             os.makedirs(p)
 
+d = {
+    'train': 0,
+    'test': 0,
+    'val': 0
+}
 for i, xml_file in enumerate(xml_files):
-    print(i, len(xml_files))
     jpg_file = xml_file[:-4]+ '.jpg'
     xml_filename = ntpath.basename(xml_file)
     jpg_filename = xml_filename[:-4] + '.jpg'
@@ -93,12 +97,15 @@ for i, xml_file in enumerate(xml_files):
     #     dest = 'val' if np.random.random() > 0.5 else 'test'
 
     #add angle
+
     for dest in ['train', 'test', 'val']:
-        p = os.path.join('labelTxt', dest, txt_filename)
+        p = os.path.join('../labelTxt-first', dest, txt_filename)
         if os.path.isfile(p):
-            with open(p, 'w+') as f:
-                f.write(label)
-                f.close()
+            d[dest] += 1
+            print(p)
+            # with open(p, 'w+') as f:
+            #     f.write(label)
+            #     f.close()
 
     # with open(p, 'w+') as f:
     #     f.write(label)
@@ -112,3 +119,5 @@ for i, xml_file in enumerate(xml_files):
     if not os.path.isfile(new_img_path):
         # copyfile(jpg_file, new_img_path)
         pass
+
+print(d)

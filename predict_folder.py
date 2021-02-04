@@ -296,7 +296,7 @@ def crop_images(prediction_output_csv):
     os.makedirs(p, exist_ok=True)
     with Pool(processes=FLAGS.num_workers) as pool:
         pool.map(export_cropped_bb, converted_dict_to_list)
-    print('all done.')
+    print('detection done.')
 
 def main(argv):
 

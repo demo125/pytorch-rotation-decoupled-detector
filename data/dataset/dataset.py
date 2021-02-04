@@ -21,24 +21,23 @@ from utils.box.bbox_np import xy42xywha
 
 
 class DetDataset(Dataset):
-    def __init__(self, root, image_set, names, aug=None, color_space='RGB'):
+    def __init__(self, json_path, names, aug=None, color_space='RGB'):
         self.names = names
         self.aug = aug
         self.color_space = color_space
         self.label2name = dict((label, name) for label, name in enumerate(self.names))
         self.name2label = dict((name, label) for label, name in enumerate(self.names))
-        self.dataset = self.load_dataset(root, image_set)
+        self.dataset = self.load_dataset(json_path)
 
     @staticmethod
-    def load_dataset(root, image_set):
-        image_sets = [image_set] if isinstance(image_set, str) else image_set
+    def load_dataset(json_paths):
         dataset = []
-        for image_set in image_sets:
-            for img, anno in json.load(open(os.path.join(root, 'image-sets', f'{image_set}.json'))):
+        for json_path in json_paths:
+            for img, anno in json.load(open(json_path)):
                 img = os.path.join(convert_path(img))
-                anno = (os.path.join(root, convert_path(anno)) if anno else None)
+                anno = anno if anno else None
                 dataset.append([img, anno])
-        return dataset
+            return dataset
 
     @staticmethod
     def load_objs(path, name2label=None):

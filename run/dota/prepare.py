@@ -70,7 +70,7 @@ def main(image_set, single_scale=False):
 
     # (3)
     pairs = []
-    print(123)
+    print(out_dir_images)
     for filename in os.listdir(out_dir_images):
         img = os.path.join('images', f'{image_set}', filename)
         anno = None if image_set == 'test' else os.path.join('annotations', f'{image_set}', filename.replace('jpg', 'json'))

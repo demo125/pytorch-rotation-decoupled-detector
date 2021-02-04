@@ -35,42 +35,62 @@ from utils.parallel import convert_model, CustomDetDataParallel
 from utils.box.bbox_np import xy42xywha, xywha2xy4
 import matplotlib.pyplot as plt
 
-def main():
-    dir_weight = os.path.join(dir_save, 'weight')
-    dir_log = os.path.join(dir_save, 'log')
+from absl.flags import FLAGS
+from absl import app, flags
+
+flags.DEFINE_string('train_json_path', '/home/mde/python/pytorch-rotation-decoupled-detector/image-sets/train.json',
+                    'dir with train images')
+flags.DEFINE_string('val_json_path', '/home/mde/python/pytorch-rotation-decoupled-detector/image-sets/val.json',
+                    'dir with val images')
+flags.DEFINE_string('test_json_path', '/home/mde/python/pytorch-rotation-decoupled-detector/image-sets/test.json',
+                    'dir with test images')
+flags.DEFINE_string('dir_weight', '/home/mde/python/pytorch-rotation-decoupled-detector/save/weight',
+                    'dir for saving weights')
+flags.DEFINE_string('dir_logs', '/home/mde/python/pytorch-rotation-decoupled-detector/save/logs',
+                    'dir for saving logs')
+
+flags.DEFINE_float('lr', 0.0001, 'learning rate')
+flags.DEFINE_integer('batch_size', 16, 'batch size')
+flags.DEFINE_integer('restore_epoch', -1, 'restore epoch checkpoint, if -1, restore last epoch,'
+                                          ' if 0 start new training')
+flags.DEFINE_integer('num_workers', 50, 'num cores')
+flags.DEFINE_integer('max_epochs', 100, 'max num epochs')
+flags.DEFINE_integer('save_interval', 5, 'save weight after this number of epochs')
+flags.DEFINE_integer('image_size', 768, 'model input image size')
+flags.DEFINE_string('device_ids', '0,1,2,3', 'comma separated gpu ids, eg. "0,1,2"')
+
+def restore_dataset(dataset_dirs, augment):
+    if augment:
+        aug = Compose([
+            ops.ToFloat(),
+            ops.PhotometricDistort(),
+            ops.RandomGray(),
+            ops.RandomBrightness(100),
+            ops.RandomContrast(0.5, 1.5),
+            ops.RandomLightingNoise(),
+            ops.RandomRotate90(),
+            ops.PadSquare(),
+            ops.Resize(FLAGS.image_size),
+            ops.BBoxFilter(24 * 24 * 0.4)
+        ])
+    else:
+        aug = Compose([
+            ops.ToFloat(),
+            ops.PadSquare(),
+            ops.Resize(FLAGS.image_size),
+            ops.BBoxFilter(24 * 24 * 0.4)
+        ])
+
+    dataset = DOTA(dataset_dirs, aug)
+    loader = DataLoader(dataset, FLAGS.batch_size, shuffle=True, num_workers=FLAGS.num_workers,
+                        pin_memory=True, drop_last=True, collate_fn=dataset.collate)
+    return loader
+
+def restore_model(dir_weight, num_classes, restore_epoch=None):
+
     os.makedirs(dir_weight, exist_ok=True)
-    writer = SummaryWriter(dir_log)
 
-    indexes = [int(os.path.splitext(path)[0]) for path in os.listdir(dir_weight)]
-    current_step = max(indexes) if indexes else 0
-
-    image_size = 768
-    lr = 0.000001
-    batch_size = 30
-    num_workers = 35
-
-    max_step = 250000
-    lr_cfg = [[100000, lr], [200000, lr / 10], [max_step, lr / 50]]
-    warm_up = [1000, lr / 50, lr]
-    save_interval = 300
-
-    aug = Compose([
-        ops.ToFloat(),
-        ops.PhotometricDistort(),
-        ops.RandomGray(),
-        ops.RandomBrightness(100),
-        ops.RandomContrast(0.5, 1.5),
-        ops.RandomLightingNoise(),
-        ops.RandomRotate90(),
-        ops.PadSquare(),
-        ops.Resize(image_size),
-        ops.BBoxFilter(24 * 24 * 0.4)
-    ])
-    dataset = DOTA(dir_dataset, ['train', 'val'], aug)
-    print(len(dataset))
-    loader = DataLoader(dataset, batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, drop_last=True,
-                        collate_fn=dataset.collate)
-    num_classes = len(dataset.names)
+    backbone = resnet.resnet101
 
     prior_box = {
         'strides': [8, 16, 32, 64, 128],
@@ -86,25 +106,55 @@ def main():
     }
 
     model = RDD(backbone(fetch_feature=True), cfg)
-    model.build_pipe(shape=[2, 3, image_size, image_size])
-    if current_step:
-        model.restore(os.path.join(dir_weight, '%d.pth' % current_step))
-        print('restored', current_step)
+    model.build_pipe(shape=[2, 3, FLAGS.image_size, FLAGS.image_size])
+
+    if restore_epoch == -1:
+        indexes = [int(os.path.splitext(path)[0]) for path in os.listdir(dir_weight)]
+        restore_epoch = max(indexes) if indexes else 0
+        FLAGS.restore_epoch = restore_epoch
+
+    if restore_epoch:
+        model.restore(os.path.join(dir_weight, '%d.pth' % restore_epoch))
     else:
         model.init()
+
+    device_ids = [int(id) for id in FLAGS.device_ids.split(',')]
+
     if len(device_ids) > 1:
         model = convert_model(model)
         model = CustomDetDataParallel(model, device_ids)
     model.cuda()
-    # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    training = True
-    loss_clss, loss_locs, loss_angles = [], [], []
-    while training and current_step < max_step:
-        tqdm_loader = tqdm.tqdm(loader, ncols=100)
+    print('model restored on step', restore_epoch)
+    return model
 
-        for images, targets, infos in tqdm_loader:
-            current_step += 1
+def main(args):
+    torch.manual_seed(0)
+    torch.backends.cudnn.benchmark = True
+    device_ids = [int(id) for id in FLAGS.device_ids.split(',')]
+    torch.cuda.set_device(device_ids[0])
+
+    train_loader = restore_dataset([FLAGS.train_json_path],
+                                   augment=True)
+    val_loader = restore_dataset([FLAGS.val_json_path], augment=False)
+
+    print('# of train images', len(train_loader.dataset))
+    print('# of val images', len(val_loader.dataset))
+
+    model = restore_model(FLAGS.dir_weight, num_classes=len(train_loader.dataset.names),
+                          restore_epoch=FLAGS.restore_epoch)
+
+    optimizer = optim.Adam(model.parameters(), lr=FLAGS.lr)
+
+    writer = SummaryWriter(FLAGS.dir_logs)
+
+    current_epoch = FLAGS.restore_epoch
+
+    while current_epoch < FLAGS.max_epochs:
+
+        current_epoch += 1
+        print(f"\nepoch {current_epoch}/{FLAGS.max_epochs}")
+        epoch_losses = {}
+        for images, targets, infos in tqdm.tqdm(train_loader, ncols=100):
             # adjust_lr_multi_step(optimizer, current_step, lr_cfg, warm_up)
 
             images = images.cuda() / 255
@@ -115,49 +165,37 @@ def main():
             optimizer.zero_grad()
 
             for key, val in list(losses.items()):
-                losses[key] = val.item()
-                writer.add_scalar(key, val, global_step=current_step)
-            loss_clss.append(losses['loss_cls'])
-            loss_locs.append(losses['loss_loc'])
-            # loss_angles.append(losses['loss_angle'])
-            # print(current_step, current_step % 10 == 0, len(loss_clss) != 0)
-            if current_step % 30 == 0 and len(loss_clss) != 0:
-                print('\nmean loss_cls', np.mean(loss_clss))
-                print('mean loss_loc', np.mean(loss_locs))
-                # print('mean loss_angle', np.mean(loss_angles))
-                print()
-                loss_clss, loss_locs, loss_angles = [], [], []
+                #losses[key] = val.item()# what is this ?
+                key = f'train_{key}'
+                if key not in epoch_losses:
+                    epoch_losses[key] = []
+                epoch_losses[key].append(val.item())
 
-            writer.flush()
+        with torch.no_grad():
+            for images, targets, infos in val_loader:
+                images = images.cuda() / 255
+                losses = model(images, targets)
+                for key, val in list(losses.items()):
+                    key = f'val_{key}'
+                    if key not in epoch_losses:
+                        epoch_losses[key] = []
+                    epoch_losses[key].append(val.item())
 
-            tqdm_loader.set_postfix(losses)
-            tqdm_loader.set_description(f'<{current_step}/{max_step}>')
+        for key, val in list(epoch_losses.items()):
+            mean_val = np.mean(val)
+            print(f'{key}={np.round(mean_val, 3)}', end=' ')
 
-            if current_step % save_interval == 0:
-                print('\nsaving')
-                save_path = os.path.join(dir_weight, '%d.pth' % current_step)
-                state_dict = model.state_dict() if len(device_ids) == 1 else model.module.state_dict()
-                torch.save(state_dict, save_path)
-                cache_file = os.path.join(dir_weight, '%d.pth' % (current_step - save_interval))
-                if os.path.exists(cache_file):
-                    os.remove(cache_file)
+            writer.add_scalar(key, mean_val, global_step=current_epoch)
+        writer.flush()
 
-            if current_step >= max_step:
-                training = False
-                writer.close()
-                break
-
+        if current_epoch % FLAGS.save_interval == 0:
+            print(f'\nsaving {current_epoch}. epoch')
+            save_path = os.path.join(FLAGS.dir_weight, '%d.pth' % current_epoch)
+            state_dict = model.state_dict() if len(device_ids) == 1 else model.module.state_dict()
+            torch.save(state_dict, save_path)
 
 if __name__ == '__main__':
-
-    torch.manual_seed(0)
-    torch.backends.cudnn.benchmark = True
-
-    device_ids = [0, 1, 2, 3]
-    torch.cuda.set_device(device_ids[0])
-    backbone = resnet.resnet101
-
-    dir_dataset = '/home/mde/python/pytorch-rotation-decoupled-detector/'
-    dir_save = '/home/mde/python/pytorch-rotation-decoupled-detector/save/'
-
-    main()
+    try:
+        app.run(main)
+    except SystemExit:
+        pass
