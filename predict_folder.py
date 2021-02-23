@@ -26,12 +26,12 @@ from disjoint_set import DisjointSet
 from utils.box.rbbox_np import rbbox_iou
 
 #TODO: FLAGS
-flags.DEFINE_string('input_folder', '../images/train', 'path to folder containing jpgs to predict')
-flags.DEFINE_string('weights', '../save/weight/128700.pth', 'path to weights file')
-flags.DEFINE_string('output_folder', '../predictions', 'folder where to save cropped jpgs')
-flags.DEFINE_string('visualized_predicted_bbs_folder', '../predictions/bbs', '...')
-flags.DEFINE_integer('batch_size', 8, '')
-flags.DEFINE_integer('num_workers', 4, '')
+flags.DEFINE_string('input_folder', './images-gas/veolia-dataset', 'path to folder containing jpgs to predict')
+flags.DEFINE_string('weights', './save/weight/390.pth', 'path to weights file')
+flags.DEFINE_string('output_folder', './predictions', 'folder where to save cropped jpgs')
+flags.DEFINE_string('visualized_predicted_bbs_folder', './predictions/bbs', '...')
+flags.DEFINE_integer('batch_size', 12, '')
+flags.DEFINE_integer('num_workers', 8, '')
 flags.DEFINE_float('conf_thresh', 0.01, '...')
 flags.DEFINE_float('nms_thresh', 0.01, '...')
 flags.DEFINE_integer('image_size', 768, '')
@@ -57,18 +57,22 @@ def create_dataset_loader(input_folder):
         dataset_path = os.path.join(FLAGS.output_folder, 'image-sets', 'dataset.json')
         os.makedirs(Path(dataset_path).parent, exist_ok=True)
         json.dump(pairs, open(dataset_path, 'wt'), indent=2)
+        return dataset_path
 
-    create_dataset_from_folder(FLAGS.input_folder)
+    dataset_path = create_dataset_from_folder(FLAGS.input_folder)
     torch.cuda.set_device(int(FLAGS.GPUS.split(',')[0]))
 
-    aug = Compose([ops.PadSquare(), ops.Resize(FLAGS.image_size)])
-    dataset = DOTA(FLAGS.output_folder, 'dataset', aug)
+    aug = Compose([
+        ops.ToFloat(),
+        ops.PadSquare(),
+        ops.Resize(FLAGS.image_size),
+    ])
+    dataset = DOTA([dataset_path], aug)
+    loader = DataLoader(dataset, FLAGS.batch_size, shuffle=True, num_workers=FLAGS.num_workers,
+                        pin_memory=True, drop_last=True, collate_fn=dataset.collate)
 
 
-    loader = DataLoader(dataset, FLAGS.batch_size,
-                        num_workers=FLAGS.num_workers,
-                        pin_memory=True,
-                        collate_fn=dataset.collate)
+
     print(f'created dataset from  {len(dataset)} files')
     return loader, len(dataset.names)
 
@@ -149,14 +153,13 @@ def predict(model, data_loader, output_csv):
         keeps = rbbox_batched_nms(bboxes, scores, labels, FLAGS.nms_thresh)
         ret.append([fname, [bboxes, scores[keeps], labels[keeps]]])
 
-    columns = ['img_name', 'x1', 'y1', 'x2', 'y2', 'x3', 'y3', 'x4', 'y4', 'angle_class', 'angle_class_degrees',
-               'angle_class_degrees_prob', 'cx', 'cy', 'w', 'h', 'bb_angle']
+    columns = ['img_name', 'x1', 'y1', 'x2', 'y2', 'x3', 'y3', 'x4', 'y4', 'class',
+               'class_prob', 'cx', 'cy', 'w', 'h', 'bb_angle']
     df = pd.DataFrame(columns=columns)
     idx = 0
     print('exporting csv...')
     for fname, (bboxes, scores, labels) in tqdm.tqdm(ret):
         for bbox, score, label in zip(bboxes, scores, labels):
-            angle_step = 5
             xy4 = xywha2xy4(bbox).ravel()
             row = [
                     fname,
@@ -164,7 +167,7 @@ def predict(model, data_loader, output_csv):
                     xy4[2], xy4[3],
                     xy4[4], xy4[5],
                     xy4[6], xy4[7],
-                    label, label*angle_step, score,
+                    label, score,
                     bbox[0], bbox[1], bbox[2], bbox[3], bbox[4],
                 ]
             df.loc[idx] = row
@@ -208,7 +211,7 @@ def filter_overlaping_bbs(input_csv, output_csv):
         for disjointset in ds.itersets():
             idxs = list(disjointset)
             g = group.loc[idxs]
-            scores = g.angle_class_degrees_prob.values
+            scores = g.class_prob.values
             keepidx = idxs[np.argmax(scores)]
             df.loc[keepidx, 'keep'] = True
             group.loc[keepidx, 'keep'] = True
@@ -224,10 +227,11 @@ def visualize_bbs(img_bbs):
     img = Image.open(img_path)
     draw = ImageDraw.Draw(img)
     for bb_row in img_bbs:
-        draw.line((bb_row['x1'], bb_row['y1'], bb_row['x2'], bb_row['y2']), fill='red', width=10)
-        draw.line((bb_row['x2'], bb_row['y2'], bb_row['x3'], bb_row['y3']), fill='red', width=10)
-        draw.line((bb_row['x3'], bb_row['y3'], bb_row['x4'], bb_row['y4']), fill='red', width=10)
-        draw.line((bb_row['x4'], bb_row['y4'], bb_row['x1'], bb_row['y1']), fill='red', width=10)
+        color = 'red' if bb_row['class'] > 0 else 'blue'
+        draw.line((bb_row['x1'], bb_row['y1'], bb_row['x2'], bb_row['y2']), fill=color, width=10)
+        draw.line((bb_row['x2'], bb_row['y2'], bb_row['x3'], bb_row['y3']), fill=color, width=10)
+        draw.line((bb_row['x3'], bb_row['y3'], bb_row['x4'], bb_row['y4']), fill=color, width=10)
+        draw.line((bb_row['x4'], bb_row['y4'], bb_row['x1'], bb_row['y1']), fill=color, width=10)
     img.save(os.path.join(FLAGS.visualized_predicted_bbs_folder, img_name))
 
 
@@ -242,18 +246,25 @@ def export_cropped_bb(img_bbs):
         if w == 0 or h == 0:
             continue
 
-        predicted_img_angle = bb_row['angle_class_degrees']
+        predicted_class = bb_row['class']
 
-        bb_angle_from_counter_clockwise = 360 - bb_angle
-        if angle_diff(bb_angle_from_counter_clockwise, predicted_img_angle) > 90:
-            bb_angle = (bb_angle + 180) % 360
+        if predicted_class > 0:
 
-        rotated_img = img.rotate(bb_angle, center=(cx, cy))
+            # {'bar_code': 0, 'register_0-179': 1, 'register_180-360': 2} - from DetDataset.name2label
+            if predicted_class == 2:# register_180-360': 2
+                bb_angle = 360-bb_angle
+            elif predicted_class == 1: #'register_0-179': 1
+                bb_angle = 180-bb_angle
+
+        rotated_img = img.rotate(-bb_angle, center=(cx, cy))
         x1, y1, x2, y2 = cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2
         x_min, y_min = min(x1,x2), min(y1,y2)
         x_max, y_max = max(x1,x2), max(y1,y2)
 
-        w_margin, h_margin = FLAGS.w_bb_margin, FLAGS.h_bb_margin
+        if predicted_class > 0:
+            w_margin, h_margin = FLAGS.w_bb_margin, FLAGS.h_bb_margin
+        else:
+            w_margin, h_margin = FLAGS.w_bb_margin*3, FLAGS.h_bb_margin*3
 
         if x_max - x_min < y_max - y_min:
             w_margin, h_margin = h_margin, w_margin
@@ -264,8 +275,14 @@ def export_cropped_bb(img_bbs):
 
         cropped_bar = rotated_img.crop((x_min, y_min, x_max, y_max))
         p = os.path.join(FLAGS.output_folder, 'cropped_bbs')
+
         img_name_without_extension = '.'.join(img_name.split('.')[:-1])
         img_extension = img_name.split('.')[-1]
+
+        if predicted_class > 0:
+            p = os.path.join(p, 'registers')
+        else:
+            p = os.path.join(p, 'bar_codes')
         cropped_bar.save(os.path.join(p, f'{img_name_without_extension}__{i}.'+img_extension))
 
 
@@ -293,7 +310,8 @@ def crop_images(prediction_output_csv):
 
     p = os.path.join(FLAGS.output_folder, 'cropped_bbs')
     print('Exporting cropped bbs to', p)
-    os.makedirs(p, exist_ok=True)
+    os.makedirs(os.path.join(p, 'registers'), exist_ok=True)
+    os.makedirs(os.path.join(p, 'bar_codes'), exist_ok=True)
     with Pool(processes=FLAGS.num_workers) as pool:
         pool.map(export_cropped_bb, converted_dict_to_list)
     print('detection done.')

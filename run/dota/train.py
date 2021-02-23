@@ -49,12 +49,12 @@ flags.DEFINE_string('dir_weight', '/home/mde/python/pytorch-rotation-decoupled-d
 flags.DEFINE_string('dir_logs', '/home/mde/python/pytorch-rotation-decoupled-detector/save/logs',
                     'dir for saving logs')
 
-flags.DEFINE_float('lr', 0.0001, 'learning rate')
+flags.DEFINE_float('lr', 0.001, 'learning rate')
 flags.DEFINE_integer('batch_size', 16, 'batch size')
 flags.DEFINE_integer('restore_epoch', -1, 'restore epoch checkpoint, if -1, restore last epoch,'
                                           ' if 0 start new training')
 flags.DEFINE_integer('num_workers', 50, 'num cores')
-flags.DEFINE_integer('max_epochs', 100, 'max num epochs')
+flags.DEFINE_integer('max_epochs', 300, 'max num epochs')
 flags.DEFINE_integer('save_interval', 5, 'save weight after this number of epochs')
 flags.DEFINE_integer('image_size', 768, 'model input image size')
 flags.DEFINE_string('device_ids', '0,1,2,3', 'comma separated gpu ids, eg. "0,1,2"')
@@ -63,22 +63,21 @@ def restore_dataset(dataset_dirs, augment):
     if augment:
         aug = Compose([
             ops.ToFloat(),
-            ops.PhotometricDistort(),
+            # ops.PhotometricDistort(),
             ops.RandomGray(),
-            ops.RandomBrightness(100),
-            ops.RandomContrast(0.5, 1.5),
-            ops.RandomLightingNoise(),
+            ops.RandomBrightness(20),
+            ops.RandomContrast(0.9, 1.1),
+            # ops.RandomLightingNoise(),
             ops.RandomRotate90(),
             ops.PadSquare(),
             ops.Resize(FLAGS.image_size),
-            ops.BBoxFilter(24 * 24 * 0.4)
+            # ops.BBoxFilter(24 * 24 * 0.4)
         ])
     else:
         aug = Compose([
             ops.ToFloat(),
             ops.PadSquare(),
             ops.Resize(FLAGS.image_size),
-            ops.BBoxFilter(24 * 24 * 0.4)
         ])
 
     dataset = DOTA(dataset_dirs, aug)

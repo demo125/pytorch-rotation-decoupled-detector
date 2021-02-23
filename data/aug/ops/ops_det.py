@@ -204,6 +204,7 @@ class Rotate:
                 shiftY = np.random.uniform(-dy, dy) if dy > 0 else 0
             m[0, 2] += shiftX
             m[1, 2] += shiftY
+        assert False #pozor
         if anno:
             bound = (nw / 2, nh / 2), (nw, nh), 0
             bboxes, labels = [], []
@@ -260,9 +261,33 @@ class RandomRotate90:
             if k == 3:
                 anno['bboxes'][:, :, 0] = iw - 1 - anno['bboxes'][:, :, 0]
                 anno['bboxes'] = anno['bboxes'][:, :, [1, 0]]
-            a = anno['labels'] * 5
-            n = (a - k * 90) % 360
-            anno['labels'] = n // 5
+
+            # print(anno['angles'])
+            # print(anno['labels'])
+            #{'bar_code': 0, 'register_0-179': 1, 'register_180-360': 2} - from DetDataset.name2label
+            new_labels = []
+            new_angles = []
+            for i, a in enumerate(anno['angles']):
+                new_angle = (a - k*90)%360
+                new_angles.append(new_angle)
+                if anno['labels'][i] == 1 or anno['labels'][i] == 2:
+                    if new_angle < 180:
+                        new_labels.append(1)
+                        # anno['labels'][i] = 1
+                    else:
+                        new_labels.append(2)
+                        # anno['labels'][i] = 2
+                else:
+                    new_labels.append(anno['labels'][i])
+
+            anno['labels'] = np.array(new_labels)
+            anno['angles'] = np.array(new_angles)
+            # print(k*90)
+            # print(new_angles)
+            # print(anno['labels'])
+            # print("_"*20)
+            # print(anno['labels'])
+            # anno['labels'] = n // 5
         img = rotate90(img, k)
         return img, anno
 

@@ -45,8 +45,9 @@ class DetDataset(Dataset):
         if path:
             objs = json.load(open(path))
             bboxes = [obj['bbox'] for obj in objs]
+            angles = [obj['angle'] for obj in objs]
             labels = [name2label[obj['name']] if name2label else obj['name'] for obj in objs]
-            objs = {'bboxes': np.array(bboxes, dtype=np.float32), 'labels': np.array(labels)}
+            objs = {'bboxes': np.array(bboxes, dtype=np.float32), 'labels': np.array(labels), 'angles':np.array(angles)}
         return objs
 
     @staticmethod

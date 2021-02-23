@@ -7,6 +7,7 @@ import numpy as np
 import ntpath
 from shutil import copyfile
 
+
 def get_xml_data(xml_path):
     def parse_xml(xml):
         if not len(xml):
@@ -24,13 +25,19 @@ def get_xml_data(xml_path):
 
     annotation_xml = lxml.etree.fromstring(open(xml_path).read())
     annotation = parse_xml(annotation_xml)['annotation']
-    box = annotation['object'][0]['robndbox']
-    size = annotation['size']
-    box['img_width'] = size['width']
-    box['img_height'] = size['height']
-    angle = math.degrees(float(box['angle']))
-    box['angle'] = angle
-    return box
+    boxes = []
+    for obj in annotation['object']:
+        box = {k: float(i) for k, i in obj['robndbox'].items()}
+        class_name = obj['name']
+        size = annotation['size']
+        angle = math.degrees(float(box['angle']))
+
+        box['img_width'] = float(size['width'])
+        box['img_height'] = float(size['height'])
+        box['angle'] = angle
+        box['class'] = class_name
+        boxes.append(box)
+    return boxes
 
 def rotate_around_point(origin, radians, point):
     """Rotate a point around a given point.
@@ -47,10 +54,10 @@ def rotate_around_point(origin, radians, point):
 
     return qx, qy
 
-def get_points_and_angle(box):
+def get_points(box):
 
-    cx, cy = float(box['cx']), float(box['cy'])
-    w2, h2 = float(box['w'])/2, float(box['h'])/2
+    cx, cy = box['cx'], box['cy']
+    w2, h2 = box['w']/2, box['h']/2
     xlt = cx - w2; ylt = cy - h2
     xrt = cx + w2; yrt = cy - h2
 
@@ -61,7 +68,7 @@ def get_points_and_angle(box):
     xrt, yrt = rotate_around_point((cx, cy), math.radians(box['angle']), (xrt, yrt))
     xlb, ylb = rotate_around_point((cx, cy), math.radians(box['angle']), (xlb, ylb))
     xrb, yrb = rotate_around_point((cx, cy), math.radians(box['angle']), (xrb, yrb))
-    return (xlt, ylt, xrt, yrt, xrb, yrb, xlb, ylb, ), box['angle']
+    return (xlt, ylt, xrt, yrt, xrb, yrb, xlb, ylb)
 
 
 
@@ -79,45 +86,53 @@ d = {
     'val': 0
 }
 for i, xml_file in enumerate(xml_files):
-    jpg_file = xml_file[:-4]+ '.jpg'
+    jpg_file = xml_file[:-4] + '.jpg'
     xml_filename = ntpath.basename(xml_file)
     jpg_filename = xml_filename[:-4] + '.jpg'
     txt_filename = xml_filename[:-4] + '.txt'
 
-    box = get_xml_data(xml_file)
-    points, angle = get_points_and_angle(box)
-    a = str(angle // 5)
-    label = ' '.join([str(x) for x in points]) + f' {str(angle)} {a}'
+    boxes = get_xml_data(xml_file)
+    labels = []
+    for box in boxes:
+        points = get_points(box)
 
-    #create new
-    # dest = None
-    # if np.random.random() > 0.1:
-    #     dest = 'train'
-    # else:
-    #     dest = 'val' if np.random.random() > 0.5 else 'test'
+        if box['class'] == 'register':
+            if box['angle'] < 180:
+                box['class'] = 'register_0-179'
+            else:
+                box['class'] = 'register_180-360'
 
-    #add angle
+        # xywha = box['cx'], box['cy'], box['w'], box['h'], 360 - box['angle']
+        # xywha = (float(i) for i in xywha)
+        # xy4 = xywha2xy4(xywha)
+        # back_xywha = xy42xywha(xy4)
 
-    for dest in ['train', 'test', 'val']:
-        p = os.path.join('../labelTxt-first', dest, txt_filename)
-        if os.path.isfile(p):
-            d[dest] += 1
-            print(p)
-            # with open(p, 'w+') as f:
-            #     f.write(label)
-            #     f.close()
+        label = ' '.join([str(x) for x in points]) + f" {box['class']} {box['angle']}"
+        labels.append(label)
 
-    # with open(p, 'w+') as f:
-    #     f.write(label)
-    #     f.close()
+    dest = None
+    if np.random.random() > 0.0:
+        if np.random.random() > 0.15:
+            dest = 'train'
+        else:
+            dest = 'val'
+    else:
+        dest = 'test'
+
+    d[dest] += 1
+
+    o_dir = os.path.join('./labelTxt', dest)
+    os.makedirs(o_dir, exist_ok=True)
+    p = os.path.join(o_dir, txt_filename)
+    with open(p, 'w+') as f:
+        f.write('\n'.join(labels))
+        f.close()
+
     o_dir = os.path.join('images', dest)
-    
-    if not os.path.isdir(o_dir):
-        os.makedirs(o_dir)
+    os.makedirs(o_dir, exist_ok=True)
 
     new_img_path = os.path.join(o_dir, jpg_filename)
     if not os.path.isfile(new_img_path):
-        # copyfile(jpg_file, new_img_path)
-        pass
+        copyfile(jpg_file, new_img_path)
 
 print(d)

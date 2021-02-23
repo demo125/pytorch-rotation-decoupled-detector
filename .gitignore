@@ -11,4 +11,7 @@ utils/box/ext/rbbox_overlap_gpu/build
 __pycache__
 config
 .ipynb_checkpoints
-
+labelTxt
+labelTxt-first
+images-gas
+images-water
